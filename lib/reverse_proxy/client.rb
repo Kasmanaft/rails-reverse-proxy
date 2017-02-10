@@ -17,7 +17,7 @@ module ReverseProxy
     # Define callback setters
     @@callback_methods.each do |method|
       define_method(method) do |&block|
-        self.callbacks[method] = block
+        callbacks[method] = block
       end
     end
 
@@ -29,13 +29,13 @@ module ReverseProxy
 
       # Initialize default callbacks with empty Proc
       @@callback_methods.each do |method|
-        self.callbacks[method] = Proc.new {}
+        callbacks[method] = proc {}
       end
 
       yield(self) if block_given?
     end
 
-    def request(env, options = {}, &block)
+    def request(env, options = {})
       options.reverse_merge!(
         headers:    {},
         path:       nil,
@@ -58,7 +58,7 @@ module ReverseProxy
       target_request.initialize_http_header(target_request_headers)
 
       # Basic auth
-      target_request.basic_auth(options[:username], options[:password]) if options[:username] and options[:password]
+      target_request.basic_auth(options[:username], options[:password]) if options[:username] && options[:password]
 
       # Setup body
       if target_request.request_body_permitted? \
@@ -79,8 +79,10 @@ module ReverseProxy
       # within Varnish (503)
       target_request['Accept-Encoding'] = nil
 
-      http_options = {}
-      http_options[:use_ssl] = (uri.scheme == "https")
+      # Set timeouts in seconds, can be float
+      http_options = options.select { |k, _| %i(read_timeout open_timeout).include? k }
+
+      http_options[:use_ssl] = (uri.scheme == 'https')
       http_options[:verify_mode] = OpenSSL::SSL::VERIFY_NONE if options[:verify_ssl]
 
       # Make the request
@@ -123,24 +125,23 @@ module ReverseProxy
       payload
     end
 
-  private
+    private
 
     def extract_http_request_headers(env)
       headers = env.reject do |k, v|
         !(/^HTTP_[A-Z_]+$/ === k) || v.nil?
       end.map do |k, v|
         [reconstruct_header_name(k), v]
-      end.inject(Rack::Utils::HeaderHash.new) do |hash, k_v|
+      end.each_with_object(Rack::Utils::HeaderHash.new) do |k_v, hash|
         k, v = k_v
         hash[k] = v
-        hash
       end
 
       headers
     end
 
     def reconstruct_header_name(name)
-      name.sub(/^HTTP_/, "").gsub("_", "-")
+      name.sub(/^HTTP_/, '').tr('_', '-')
     end
 
     COOKIE_PARAM_PATTERN = /\A([^(),\/<>@;:\\\"\[\]?={}\s]+)(?:=([^;]*))?\Z/
@@ -153,7 +154,7 @@ module ReverseProxy
 
       cookie = {
         name: info[1],
-        value: CGI.unescape(info[2]),
+        value: CGI.unescape(info[2])
       }
 
       params.each do |param|
@@ -168,7 +169,7 @@ module ReverseProxy
             cookie[:expires] = Time.parse(value)
           rescue ArgumentError
           end
-        when *[:httponly, :secure]
+        when :httponly, :secure
           cookie[key] = true
         else
           cookie[key] = value
