@@ -86,7 +86,6 @@ module ReverseProxy
       http_options[:verify_mode] = OpenSSL::SSL::VERIFY_NONE if options[:verify_ssl]
 
       # Make the request
-      Rails.logger.info uri.hostname.inspect
       Net::HTTP.start(uri.hostname, uri.port, http_options) do |http|
         target_response = http.request(target_request)
       end
